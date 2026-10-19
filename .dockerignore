@@ -1,0 +1,8 @@
+node_modules
+client/dist
+data/*.db
+data/*.db-*
+data/backups
+data/.session-secret
+.env
+.git

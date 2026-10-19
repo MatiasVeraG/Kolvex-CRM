@@ -1,0 +1,24 @@
+{
+  "name": "crm-ventas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CRM para seguimiento de negociaciones del equipo de ventas",
+  "type": "module",
+  "engines": {
+    "node": ">=22.9"
+  },
+  "scripts": {
+    "build": "node client/build.js",
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node server/scripts/dev.js",
+    "import": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/scripts/import.js",
+    "backup": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/scripts/backup.js"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
