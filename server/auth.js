@@ -59,8 +59,28 @@ export function validatePassword(p) {
   return null;
 }
 
+// Recuperar acceso: con RESET_ADMIN=true, ADMIN_EMAIL y ADMIN_PASSWORD, al arrancar se crea
+// ese usuario (o se le pone esa contraseña) como administrador activo.
+// Después de entrar, borra RESET_ADMIN para que no se vuelva a aplicar.
+function resetAdmin() {
+  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password || validatePassword(password)) {
+    console.error('RESET_ADMIN necesita ADMIN_EMAIL y ADMIN_PASSWORD (mínimo 8 caracteres). No se cambió nada.');
+    return;
+  }
+  const existing = users.getWithHash(email);
+  if (existing) {
+    users.update(existing.id, { password_hash: hashPassword(password), role: 'admin', active: 1 });
+  } else {
+    users.create({ name: process.env.ADMIN_NAME || 'Administrador', email, password_hash: hashPassword(password), role: 'admin' });
+  }
+  console.log(`\nAcceso de administrador restablecido para ${email}. Borra la variable RESET_ADMIN.\n`);
+}
+
 // Primer arranque: si no hay usuarios, se crea un administrador.
 export function ensureAdmin() {
+  if (process.env.RESET_ADMIN === 'true') resetAdmin();
   if (users.count() > 0) return;
   const email = process.env.ADMIN_EMAIL || 'admin@crm.local';
   const generated = !process.env.ADMIN_PASSWORD;
