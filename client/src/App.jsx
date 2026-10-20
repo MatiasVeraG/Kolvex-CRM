@@ -9,6 +9,7 @@ import Team from './pages/Team.jsx';
 import Account from './pages/Account.jsx';
 import Logo from './components/Logo.jsx';
 import WhatsAppFlows from './pages/WhatsAppFlows.jsx';
+import BrowserRobot from './pages/BrowserRobot.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -59,12 +60,14 @@ export default function App() {
   else if (section === 'equipo') page = <Team />;
   else if (section === 'cuenta') page = <Account />;
   else if (section === 'flujos') page = <WhatsAppFlows />;
+  else if (section === 'robot') page = <BrowserRobot />;
   else page = <Board />;
 
   const nav = [
     ['tablero', 'Negociaciones'],
     ['empresas', 'Empresas'],
     ['flujos', 'Flujos WhatsApp'],
+    ...(user.role === 'admin' ? [['robot', 'Robot navegador']] : []),
     ['equipo', 'Equipo'],
   ];
   const current = section || 'tablero';

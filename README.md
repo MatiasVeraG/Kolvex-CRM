@@ -66,35 +66,42 @@ En **Flujos WhatsApp → Envíos automáticos por rubro**, un administrador pued
 
 Solo se incluyen negociaciones en Prospecto, con celular válido y sin flujos previos. Cada número se incorpora una sola vez al modo automático, aunque esté repetido en varias empresas. Los seguimientos conservan una copia del flujo y el nombre del vendedor que preparó el lote. Las reglas se aplican al preparar lotes nuevos, no modifican los ya preparados.
 
-El worker es un proceso aparte: usa `whatsapp-web.js` y Puppeteer para controlar WhatsApp Web. Puede ejecutarse en tu computadora mientras el CRM está alojado en un servidor. El servidor del CRM mantiene su instalación actual y no necesita instalar Chromium. El worker sí necesita **Node.js 22.12 o superior**, dependencias de Chromium y una carpeta persistente para la sesión.
+El modo principal es un **robot de Playwright que opera por pantalla**. Abre Chrome, entra al CRM con tu usuario, busca un prospecto pendiente, pulsa **Contactar · Abrir WhatsApp Web**, envía el texto y vuelve al CRM para marcar **Ya lo envié · Registrar**. No usa WhatsApp embebido ni APIs internas de WhatsApp para este recorrido. Puede ejecutarse en tu computadora mientras el CRM está alojado en un servidor. Necesita **Node.js 22.12 o superior**, Google Chrome y una carpeta persistente para la sesión.
 
 ```powershell
 cd automation
 npm ci
 Copy-Item .env.example .env
 # Edita .env: CRM_URL, CRM_EMAIL y CRM_PASSWORD de un administrador existente.
-npm run simulate  # previsualiza por API; no abre WhatsApp ni envía mensajes
-npm start         # muestra el QR para vincular WhatsApp
+npm run robot:simulate  # entra al CRM y abre la simulación del lote sin enviar
+npm run robot           # abre Chrome y recorre CRM → WhatsApp Web → Registrar
+# npm start hace lo mismo que npm run robot
+# npm run robot -- --once procesa como máximo un contacto y termina
 ```
 
-Desde WhatsApp en el teléfono, abre **Dispositivos vinculados** y escanea el QR de la terminal. Luego, en el CRM, revisa el lote y pulsa **Habilitar envíos reales**. Por defecto los envíos están pausados, el horario es de 9 a 18 (TZ del servidor, America/Asuncion por defecto), con un máximo de 30 intentos diarios y 60 segundos entre mensajes. El worker debe permanecer encendido. El panel muestra si está conectado y vinculado. Para detener nuevos envíos usa **Pausar envíos automáticos**; un envío ya iniciado puede finalizar.
+Primero prepara un lote y habilita los envíos en **Flujos WhatsApp**. Al ejecutar el robot se abre una ventana propia de Chrome: si WhatsApp muestra un QR, escanéalo desde **Dispositivos vinculados** en tu teléfono. La sesión queda guardada para las siguientes ejecuciones. La pantalla **Robot navegador** del CRM muestra el contacto y el paso que está procesando. Por defecto el horario es de 9 a 18 (TZ del servidor, America/Asuncion por defecto), con un máximo de 30 intentos diarios y 60 segundos entre mensajes. Para detener nuevos envíos usa **Pausar envíos automáticos** o cierra el robot; un envío ya iniciado puede finalizar.
 
-La URL remota debe usar HTTPS; se permite HTTP en localhost para desarrollo. `automation/.env` contiene las credenciales del CRM y `.session/` contiene la sesión de WhatsApp y los recibos pendientes: ambos están excluidos de Git. No compartas esa carpeta ni ejecutes dos workers con el mismo perfil. Si el proceso se cierra abruptamente, comprueba que no siga ejecutándose antes de quitar el archivo `.session/worker.lock` y reiniciarlo. Puedes indicar `WA_CHROME_PATH` para usar un Chrome/Chromium instalado y `WA_SESSION_DIR` para elegir otro directorio persistente.
+La URL remota debe usar HTTPS; se permite HTTP en localhost para desarrollo. `automation/.env` contiene las credenciales del CRM y `.session/playwright/` guarda el perfil y los recibos pendientes: ambos están excluidos de Git. No compartas esa carpeta ni ejecutes dos robots con el mismo perfil. Puedes indicar `WA_BROWSER_CHANNEL=msedge` para usar Edge, `WA_CHROME_PATH` para un ejecutable específico y `WA_SESSION_DIR` para elegir otro directorio persistente. El robot se ejecuta con una ventana visible.
 
-Antes de cada envío el worker verifica el estado actual del flujo y revisa hasta los últimos 100 mensajes del chat. Cuando detecta una respuesta posterior al inicio del seguimiento, guarda el texto y finaliza la secuencia. Si detecta una baja explícita (`baja`, `stop`, `no me escribas`, `no contactar` o `no me contacten`), bloquea ese número para nuevos lotes. Si no puede revisar el chat, detiene el trabajo para revisión. La selección de ramas por respuesta se implementará al definir el embudo; por ahora una respuesta termina la secuencia automática.
+Antes de enviar, el robot revisa los mensajes recibidos visibles en el chat, compara el texto preparado con el CRM y pulsa el control para verificar que el envío siga habilitado. Si encuentra una respuesta posterior al inicio del seguimiento, vuelve al CRM, registra la respuesta y finaliza la secuencia sin enviar. Si no puede interpretar las fechas visibles o confirmar el resultado, detiene el robot para revisión. Las fechas del chat se interpretan como día/mes/año con el perfil en español. No hay monitoreo continuo de todos los chats; la revisión ocurre al abrir cada contacto. La selección de ramas por respuesta se implementará al definir el embudo.
 
-Cuando WhatsApp Web acepta el mensaje, se guarda su identificador, se registra el texto en el historial y se programa el siguiente paso. **Aceptado no significa entregado ni leído.** Los recibos se guardan localmente antes de confirmarse al CRM: una reconexión reenvía el recibo, no el mensaje. Si el resultado es incierto o pasan cinco minutos sin confirmación, el envío queda en **Revisar resultado**, sin reintento automático. Revisa el chat y confirma el resultado en el panel. Si confirmas que no se envió, el flujo queda pausado; ese paso se puede completar desde el modo semimanual.
+El robot hace un solo clic en Enviar y espera un mensaje saliente nuevo que coincida con el texto y tenga una marca de enviado. Guarda el identificador visible del mensaje, vuelve al CRM y registra el resultado. **La marca de enviado no confirma lectura.** Un mensaje antiguo idéntico no cuenta como evidencia del nuevo envío. Si no puede confirmar el resultado o pasan cinco minutos sin confirmación, el envío queda en **Revisar resultado**, sin reintento automático. Si WhatsApp confirmó el mensaje pero falló el registro en el CRM, queda un recibo en `.session/playwright/receipts/`; el robot no continúa hasta que revises ese resultado en el CRM y retires el recibo ya conciliado. No vuelvas a enviar ese mensaje. Si confirmas que no se envió, el flujo queda pausado; ese paso se puede completar desde el modo semimanual.
 
-Esta integración con WhatsApp Web no es oficial. Puede necesitar ajustes ante cambios de WhatsApp y existe riesgo de restricción de la cuenta. Se fija Puppeteer actualizado mediante `overrides` en el paquete del worker para evitar dependencias vulnerables del navegador que trae la biblioteca. La prueba del proyecto usa un adaptador simulado y no verifica envíos en una cuenta real: la vinculación y la primera prueba con un contacto autorizado se realizan en tu instalación.
+El recorrido depende de la interfaz de WhatsApp Web y puede necesitar ajustes si cambia. `WA_COMPOSER_SELECTOR` y `WA_SEND_SELECTOR` permiten ajustar el campo de mensaje y el botón de envío. La prueba usa el CRM real con una pantalla de WhatsApp interceptada y simulada; no verifica una cuenta real ni contacta prospectos. La vinculación y la primera prueba con un contacto autorizado se realizan en tu instalación.
+
+El worker anterior por `whatsapp-web.js` sigue disponible como alternativa con `npm run worker` y `npm run worker:simulate`; no lo ejecutes a la vez que el robot de navegador. Su QR aparece en la terminal y su sesión está en `.session/auth/`. El modo predeterminado de `npm start` es ahora Playwright por pantalla.
 
 ### Verificación
 
 ```bash
 npm test
 npm run build
+cd automation
+npm ci
+npm run test:browser
 ```
 
-Las pruebas usan bases temporales aisladas y cubren validaciones, personalización, copias de plantillas, registros duplicados, fechas, pausas, respuestas, bloqueos y cierre de negociaciones. También prueban la API HTTP con el worker en simulación, límites, selección por rubro, envíos simulados, persistencia de recibos, desconexiones y resultados inciertos.
+Las pruebas usan bases temporales aisladas y cubren validaciones, personalización, copias de plantillas, registros duplicados, fechas, pausas, respuestas, bloqueos y cierre de negociaciones. También prueban la API HTTP con el worker en simulación, límites, selección por rubro, envíos simulados, persistencia de recibos, desconexiones y resultados inciertos. `test:browser` verifica con Playwright los clics sobre el CRM y WhatsApp simulado, el retorno para registrar, la detección de respuestas y la detención ante falta de confirmación.
 
 ## Configuración
 

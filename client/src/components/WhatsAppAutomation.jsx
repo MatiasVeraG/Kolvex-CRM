@@ -22,17 +22,18 @@ export default function WhatsAppAutomation({ flows }) {
     finally { setBusy(false); }
   };
   if (!res.data) return <section className="panel">{res.error ? <div className="alert">{res.error}<button className="btn btn-ghost" onClick={() => res.reload()}>Reintentar</button></div> : <Spinner />}</section>;
-  const { config, rules, jobs, worker } = res.data;
+  const { config, rules, jobs } = res.data;
   const form = settings || config;
   const saveConfig = (body) => api('/whatsapp/automation', { method: 'PATCH', body });
   const simulate = () => perform(async () => { setPreview(await api('/whatsapp/automation/preview', { method: 'POST', body: {} })); });
   return <section className="panel wa-automation">
     <header className="panel-head"><h2>Envíos automáticos por rubro</h2><span className="tag">{config.enabled ? 'Envíos habilitados' : 'Envíos pausados'}</span></header>
-    <p className="muted">Asigna un flujo por rubro, simula el lote y revisa los mensajes antes de incorporarlo. El worker abre WhatsApp Web y envía cada paso cuando vence. Se detiene el flujo cuando recibe una respuesta.</p>
-    <div className="wa-run-head"><p><strong>WhatsApp: </strong>{worker ? worker.ready ? 'Worker conectado y vinculado' : 'Worker conectado; esperando vinculación' : 'Sin worker conectado'}</p>
+    <p className="muted">Asigna un flujo por rubro, simula el lote y revisa los mensajes antes de incorporarlo. El robot de Playwright entra al CRM, abre WhatsApp Web, envía y vuelve para registrar el resultado.</p>
+    <div><a className="btn btn-primary" href="#/robot">Abrir recorrido del robot</a></div>
+    <div className="wa-run-head"><p><strong>Robot Playwright: </strong>ejecútalo con npm run robot en tu computadora.</p>
       {config.enabled ? <button className="btn btn-danger" disabled={busy} onClick={() => perform(() => saveConfig({ enabled: false }))}>Pausar envíos automáticos</button> : <button className="btn btn-primary" disabled={busy} onClick={() => setConfirmEnable(true)}>Habilitar envíos reales</button>}
     </div>
-    <details><summary>Conectar WhatsApp Web</summary><p className="muted">En la carpeta automation, instala las dependencias con npm ci, copia .env.example como .env y configura la URL y el usuario del CRM. Ejecuta npm start y escanea el QR desde Dispositivos vinculados en tu WhatsApp. El worker necesita permanecer encendido para enviar y detectar respuestas.</p><p className="muted">La vinculación usa una integración no oficial con WhatsApp Web. Puede dejar de funcionar si cambia WhatsApp y existe riesgo de restricción de la cuenta. La aceptación de un mensaje no confirma entrega ni lectura.</p></details>
+    <details><summary>Iniciar robot de navegador</summary><p className="muted">En la carpeta automation, instala las dependencias con npm ci, copia .env.example como .env y configura la URL y el usuario del CRM. Ejecuta npm run robot: se abrirá Chrome, el robot entrará al CRM y abrirá WhatsApp Web para cada mensaje. Escanea el QR en esa ventana si aparece. Luego enviará y volverá al CRM para registrar cada mensaje.</p><p className="muted">La sesión se guarda en el perfil del robot. Si WhatsApp cambia su interfaz, el recorrido puede requerir ajustes. El robot revisa el chat antes de enviar; las ramas del embudo se configurarán después.</p></details>
     {res.error && <div className="alert">{res.error}</div>}
     <fieldset disabled={busy} className="wa-fieldset">
       <h3>Horario y ritmo</h3><p className="muted small">Horario de America/Asuncion por defecto (usa TZ del servidor). La pausa impide nuevos envíos; uno ya iniciado puede finalizar.</p>

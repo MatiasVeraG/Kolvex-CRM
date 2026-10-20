@@ -101,7 +101,8 @@ export function claimJob(now = Date.now()) {
       if (!validJob(job, now)) { store.updateJob(job.id, { state: 'cancelled' }); continue; }
       const token = crypto.randomBytes(24).toString('hex');
       const claimed = store.updateJob(job.id, { state: 'processing', claim_token: token, started_at: now, local_day: clock.day });
-      return { job: { ...claimed, enrollment_started_at: store.enrollment(job.run_id).started_at } };
+      const run = whatsapp.run(job.run_id);
+      return { job: { ...claimed, company_name: run.company_name, flow_name: run.flow_name, enrollment_started_at: store.enrollment(job.run_id).started_at } };
     }
     return { job: null };
   });
