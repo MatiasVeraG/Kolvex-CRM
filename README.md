@@ -49,6 +49,7 @@ Copia `.env.example` como `.env` y completa los valores:
 | `PORT` | Puerto del servidor (por defecto 3000) |
 | `SESSION_SECRET` | Clave para firmar las sesiones. Si falta, se genera una y se guarda en `data/.session-secret` |
 | `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer administrador. Solo se usan cuando la base está vacía |
+| `RESET_ADMIN` | Para recuperar el acceso: con `true`, al arrancar se crea el usuario de `ADMIN_EMAIL` como administrador, o se le pone la contraseña de `ADMIN_PASSWORD`. Bórrala después de entrar |
 | `SESSION_DAYS` | Días que dura una sesión (por defecto 14) |
 | `DATA_DIR` | Carpeta de la base de datos (por defecto `./data`) |
 | `TZ` | Zona horaria, para calcular los seguimientos vencidos (`America/Asuncion`) |

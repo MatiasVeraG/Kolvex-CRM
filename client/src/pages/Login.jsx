@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api.js';
+import Logo from '../components/Logo.jsx';
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('');
@@ -23,9 +24,9 @@ export default function Login({ onLogin }) {
   return (
     <div className="center-page login-page">
       <form className="login-card" onSubmit={submit}>
-        <div className="brand brand-lg">
-          <img src="/favicon.svg" alt="" width="32" height="32" />
-          <span>CRM Ventas</span>
+        <div className="login-logo">
+          <Logo size={64} />
+          <span>Kolvex <span className="brand-sub">CRM</span></span>
         </div>
         <p className="muted">Entra con el usuario que te dio el administrador.</p>
         <label className="field">

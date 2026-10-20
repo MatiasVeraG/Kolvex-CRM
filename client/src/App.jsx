@@ -7,6 +7,7 @@ import Companies from './pages/Companies.jsx';
 import CompanyDetail from './pages/CompanyDetail.jsx';
 import Team from './pages/Team.jsx';
 import Account from './pages/Account.jsx';
+import Logo from './components/Logo.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -71,8 +72,8 @@ export default function App() {
         <header className="topbar">
           <div className="topbar-inner">
             <a className="brand" href="#/tablero">
-              <img src="/favicon.svg" alt="" width="24" height="24" />
-              <span>CRM Ventas</span>
+              <Logo size={26} />
+              <span>Kolvex <span className="brand-sub">CRM</span></span>
             </a>
             <nav className="mainnav" aria-label="Secciones">
               {nav.map(([k, label]) => (
