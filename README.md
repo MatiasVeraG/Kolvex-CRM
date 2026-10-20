@@ -104,6 +104,10 @@ Se puede hacer con el servidor andando. Conviene programarlo una vez por día (c
 
 ## Importar más empresas
 
+Desde el CRM: **Empresas → Importar lista** y sube el CSV de Outscraper (o cualquier CSV con columnas de nombre, teléfono, ciudad, etc.). Muestra una vista previa, omite las empresas con web propia y las cerradas, calcula la prioridad y no duplica las que ya existen. Si tienes un Excel, guárdalo como "CSV UTF-8".
+
+También desde la terminal:
+
 ```bash
 npm run import -- archivo.json
 npm run import -- archivo.csv

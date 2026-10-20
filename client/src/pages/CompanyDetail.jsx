@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, money, number, fmtDateTime, fmtDate, parseUtc, parseLocal, relative, whatsappUrl, isOverdue, COMMENT_LABELS } from '../api.js';
+import { api, money, number, fmtDateTime, fmtDate, parseUtc, parseLocal, relative, whatsappUrl, telUrl, webUrl, webLabel, mapsSearchUrl, directionsUrl, googleSearchUrl, instagramSearchUrl, isOverdue, COMMENT_LABELS } from '../api.js';
 import { useApp, useFetch, useToast, navigate, Spinner, EmptyState, ConfirmButton, PriorityBadge, StageBadge } from '../components/ui.jsx';
 import CompanyFields from '../components/CompanyFields.jsx';
 
@@ -12,7 +12,6 @@ export default function CompanyDetail({ id }) {
   if (res.loading && !res.data) return <div className="page"><Spinner /></div>;
   if (res.error && !res.data) return <div className="page"><a href="#/empresas" className="back">← Empresas</a><div className="alert">{res.error}</div></div>;
   const c = res.data;
-  const wa = whatsappUrl(c.telefono);
 
   const addDeal = async () => {
     try {
@@ -36,12 +35,8 @@ export default function CompanyDetail({ id }) {
           <h1>{c.name}</h1>
           <p className="muted">{[c.rubro, c.ciudad, c.presencia && `Presencia: ${c.presencia}`].filter(Boolean).join(' · ')}</p>
         </div>
-        <div className="quick-actions">
-          {c.telefono && <span className="phone" title="Teléfono">{c.telefono}</span>}
-          {wa && <a className="btn btn-wa btn-sm" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
-          {c.maps_url && <a className="btn btn-ghost btn-sm" href={c.maps_url} target="_blank" rel="noreferrer">Google Maps</a>}
-        </div>
       </div>
+      <ContactBar c={c} onEdit={() => setEditing(true)} />
 
       <div className="detail-grid">
         <div className="detail-main">
@@ -78,13 +73,65 @@ export default function CompanyDetail({ id }) {
   );
 }
 
+// Íconos simples en línea (sin librerías)
+const ICONS = {
+  whatsapp: 'M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.8-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z',
+  phone: 'M6.6 10.8a15.2 15.2 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2Z',
+  copy: 'M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h11v14Z',
+  mail: 'M20 4H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 4-8 5-8-5V6l8 5 8-5v2Z',
+  pin: 'M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z',
+  route: 'M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4ZM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5Z',
+  web: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 6h-3a15.6 15.6 0 0 0-1.3-3.6A8 8 0 0 1 18.9 8ZM12 4a14 14 0 0 1 1.9 4h-3.8A14 14 0 0 1 12 4ZM4.3 14a8.2 8.2 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4H4.3Zm.8 2h3a15.6 15.6 0 0 0 1.3 3.6A8 8 0 0 1 5.1 16Zm3-8h-3a8 8 0 0 1 4.3-3.6A15.6 15.6 0 0 0 8.1 8ZM12 20a14 14 0 0 1-1.9-4h3.8A14 14 0 0 1 12 20Zm2.3-6H9.7a14.7 14.7 0 0 1 0-4h4.6a14.7 14.7 0 0 1 0 4Zm.3 5.6a15.6 15.6 0 0 0 1.3-3.6h3a8 8 0 0 1-4.3 3.6Zm1.7-5.6a16.5 16.5 0 0 0 0-4h3.4a8.2 8.2 0 0 1 0 4h-3.4Z',
+  search: 'M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5-5-5Zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z',
+};
+const Icon = ({ name }) => <svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[name]} fill="currentColor" /></svg>;
+
+function ContactBar({ c, onEdit }) {
+  const toast = useToast();
+  const wa = whatsappUrl(c.telefono);
+  const tel = telUrl(c.telefono);
+  const web = webUrl(c.web);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(c.telefono); toast('Número copiado'); } catch { toast('No se pudo copiar. Selecciona el número a mano.', 'error'); }
+  };
+  const ext = { target: '_blank', rel: 'noreferrer' };
+  return (
+    <div className="contact-bar">
+      <div className="contact-phone">
+        {c.telefono ? (
+          <>
+            <span className="phone">{c.telefono}</span>
+            <button type="button" className="icon-btn icon-btn-sm" onClick={copy} title="Copiar número" aria-label="Copiar número"><Icon name="copy" /></button>
+          </>
+        ) : (
+          <button type="button" className="link-btn" onClick={onEdit}>+ Agregar teléfono</button>
+        )}
+      </div>
+      <div className="contact-actions">
+        {wa && <a className="btn btn-wa btn-sm" href={wa} {...ext}><Icon name="whatsapp" />WhatsApp</a>}
+        {tel && <a className="btn btn-ghost btn-sm" href={tel}><Icon name="phone" />Llamar</a>}
+        {c.email && <a className="btn btn-ghost btn-sm" href={`mailto:${c.email}`}><Icon name="mail" />Email</a>}
+        <a className="btn btn-ghost btn-sm" href={mapsSearchUrl(c)} {...ext}><Icon name="pin" />Google Maps</a>
+        <a className="btn btn-ghost btn-sm" href={directionsUrl(c)} {...ext}><Icon name="route" />Cómo llegar</a>
+        {web && <a className="btn btn-ghost btn-sm" href={web} {...ext}><Icon name="web" />{webLabel(c.web)}</a>}
+        <a className="btn btn-ghost btn-sm" href={googleSearchUrl(c)} {...ext}><Icon name="search" />Buscar en Google</a>
+        {!web && <a className="btn btn-ghost btn-sm" href={instagramSearchUrl(c)} {...ext}><Icon name="search" />Buscar Instagram</a>}
+      </div>
+      {c.telefono && !wa && <p className="muted small contact-note">Este número parece de línea fija, por eso no aparece el botón de WhatsApp.</p>}
+    </div>
+  );
+}
+
 function CompanyView({ c }) {
+  const ext = { target: '_blank', rel: 'noreferrer' };
+  const tel = telUrl(c.telefono);
+  const web = webUrl(c.web);
   const rows = [
     ['Persona de contacto', [c.contacto_nombre, c.contacto_cargo].filter(Boolean).join(' · ')],
-    ['Teléfono', c.telefono],
-    ['Email', c.email],
-    ['Dirección', c.direccion],
-    ['Web o red social', c.web],
+    ['Teléfono', c.telefono && (tel ? <a href={tel}>{c.telefono}</a> : c.telefono)],
+    ['Email', c.email && <a href={`mailto:${c.email}`}>{c.email}</a>],
+    ['Dirección', c.direccion && <a href={mapsSearchUrl(c)} {...ext}>{c.direccion}</a>],
+    ['Web o red social', web && <a href={web} {...ext}>{c.web}</a>],
     ['Google', c.rating ? `${c.rating.toFixed(1)} ★ · ${number(c.reviews)} reseñas` : null],
     ['Agregada', fmtDate(parseUtc(c.created_at))],
   ];

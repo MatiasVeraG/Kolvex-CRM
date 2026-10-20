@@ -69,4 +69,46 @@ export function whatsappUrl(phone) {
   return null;
 }
 
+// Link para llamar (tel:) con el número en formato internacional
+export function telUrl(phone) {
+  let digits = String(phone || '').replace(/[^\d+]/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('0')) digits = `+595${digits.slice(1)}`;
+  else if (!digits.startsWith('+')) digits = `+${digits}`;
+  return `tel:${digits}`;
+}
+
+// Agrega https:// si falta
+export function webUrl(web) {
+  const s = String(web || '').trim();
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.startsWith('@')) return `https://instagram.com/${s.slice(1)}`;
+  return `https://${s}`;
+}
+
+export function webLabel(web) {
+  const s = String(web || '').toLowerCase();
+  if (s.includes('instagram')) return 'Instagram';
+  if (s.includes('facebook')) return 'Facebook';
+  if (s.includes('tiktok')) return 'TikTok';
+  if (s.includes('linktr')) return 'Linktree';
+  return 'Sitio web';
+}
+
+export const mapsSearchUrl = (c) => {
+  if (c.maps_url) return c.maps_url;
+  const q = [c.name, c.direccion, c.ciudad, 'Paraguay'].filter(Boolean).join(', ');
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+};
+export const directionsUrl = (c) => {
+  // Si el link de Maps trae coordenadas, se usan (es más preciso que la dirección)
+  const m = String(c.maps_url || '').match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || String(c.maps_url || '').match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (m) return `https://www.google.com/maps/dir/?api=1&destination=${m[1]},${m[2]}`;
+  const q = [c.direccion || c.name, c.ciudad, 'Paraguay'].filter(Boolean).join(', ');
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`;
+};
+export const googleSearchUrl = (c) => `https://www.google.com/search?q=${encodeURIComponent([c.name, c.ciudad].filter(Boolean).join(' '))}`;
+export const instagramSearchUrl = (c) => `https://www.google.com/search?q=${encodeURIComponent(`${c.name} ${c.ciudad || ''} site:instagram.com`)}`;
+
 export const COMMENT_LABELS = { reunion: 'Reunión', llamada: 'Llamada', whatsapp: 'WhatsApp', email: 'Email', nota: 'Nota' };

@@ -2,6 +2,7 @@
 // y devuelve el objeto que se enviará como JSON.
 import { STAGES, STAGE_IDS, COMMENT_TYPES, PRIORITIES, COMPANY_FIELDS, users, companies, deals, comments, stats, tx } from './db.js';
 import { createToken, verifyPassword, hashPassword, validatePassword } from './auth.js';
+import { importRecords } from './importer.js';
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -254,6 +255,17 @@ export const routes = [
     if (c.user_id !== user.id && user.role !== 'admin') throw forbidden();
     comments.remove(id);
     return { ok: true };
+  }],
+
+  // ---------- Importar ----------
+  ['POST', '/api/import', {}, ({ body }) => {
+    const rows = Array.isArray(body.rows) ? body.rows : null;
+    if (!rows || !rows.length) throw bad('El archivo no tiene filas para importar.');
+    if (rows.length > 5000) throw bad('Máximo 5.000 empresas por importación. Divide el archivo en partes.');
+    const o = body.options || {};
+    const ownerId = int(o.owner_id);
+    if (ownerId && !users.get(ownerId)) throw bad('El responsable no existe.');
+    return importRecords(rows, { onlyWithoutWeb: o.onlyWithoutWeb !== false, skipClosed: o.skipClosed !== false, ownerId });
   }],
 
   ['GET', '/api/stats', {}, () => stats()],

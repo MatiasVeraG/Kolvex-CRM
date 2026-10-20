@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const STATIC_DIR = path.resolve(__dirname, '../client/dist');
-const MAX_BODY = 1024 * 1024;
+const MAX_BODY = 10 * 1024 * 1024;
 
 // Convierte '/api/companies/:id' en una expresión regular con parámetros
 const compiled = routes.map(([method, pattern, opts, handler]) => {
