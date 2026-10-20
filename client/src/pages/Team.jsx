@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, parseUtc, fmtDate } from '../api.js';
-import { useApp, useToast, Modal, Field } from '../components/ui.jsx';
+import { useApp, useToast, Modal, Field, ConfirmButton } from '../components/ui.jsx';
 import { initials } from '../App.jsx';
 
 export default function Team() {
@@ -13,6 +13,14 @@ export default function Team() {
     try {
       await api(`/users/${m.id}`, { method: 'PATCH', body: { active: !m.active } });
       toast(m.active ? `${m.name} desactivado` : `${m.name} activado`);
+      reloadMeta();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  const remove = async (m) => {
+    try {
+      await api(`/users/${m.id}`, { method: 'DELETE' });
+      toast(`${m.name} eliminado`);
       reloadMeta();
     } catch (e) { toast(e.message, 'error'); }
   };
@@ -38,6 +46,9 @@ export default function Team() {
               <div className="team-actions">
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setModal({ mode: 'edit', member: m })}>Editar</button>
                 {m.id !== user.id && <button type="button" className="btn btn-ghost btn-sm" onClick={() => toggleActive(m)}>{m.active ? 'Desactivar' : 'Activar'}</button>}
+                {m.id !== user.id && !m.comment_count && !m.deal_count && (
+                  <ConfirmButton confirmText={`¿Eliminar a ${m.name}?`} onConfirm={() => remove(m)}>Eliminar</ConfirmButton>
+                )}
               </div>
             )}
           </li>

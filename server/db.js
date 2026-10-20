@@ -111,7 +111,16 @@ const plainAll = (rows) => rows.map((r) => ({ ...r }));
 const USER_COLS = 'id, name, email, role, active, created_at';
 export const users = {
   count: () => db.prepare('SELECT COUNT(*) AS n FROM users').get().n,
-  list: () => plainAll(db.prepare(`SELECT ${USER_COLS} FROM users ORDER BY active DESC, name`).all()),
+  list: () => plainAll(db.prepare(`SELECT ${USER_COLS},
+      (SELECT COUNT(*) FROM comments WHERE user_id = users.id) AS comment_count,
+      (SELECT COUNT(*) FROM deals WHERE owner_id = users.id) AS deal_count
+    FROM users ORDER BY active DESC, name`).all()),
+  // Cuántos registros dependen del usuario (si tiene alguno, no se puede eliminar)
+  usage: (id) => ({
+    comments: db.prepare('SELECT COUNT(*) AS n FROM comments WHERE user_id = ?').get(id).n,
+    deals: db.prepare('SELECT COUNT(*) AS n FROM deals WHERE owner_id = ?').get(id).n,
+  }),
+  remove: (id) => db.prepare('DELETE FROM users WHERE id = ?').run(id).changes,
   get: (id) => plain(db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id)),
   getWithHash: (email) => plain(db.prepare('SELECT * FROM users WHERE email = ?').get(email)),
   getHashById: (id) => db.prepare('SELECT password_hash FROM users WHERE id = ?').get(id)?.password_hash,

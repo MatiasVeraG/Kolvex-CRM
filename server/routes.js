@@ -153,6 +153,24 @@ export const routes = [
     if (losingAdmin && users.adminCount() <= 1) throw bad('Debe quedar al menos un administrador activo.');
     return users.update(id, f);
   }],
+  // Solo se eliminan usuarios sin historial; los demás se desactivan para no perder quién hizo qué.
+  ['DELETE', '/api/users/:id', {}, ({ user, params }) => {
+    requireAdmin(user);
+    const id = idParam(params.id);
+    const target = users.get(id);
+    if (!target) throw notFound('Usuario');
+    if (id === user.id) throw bad('No puedes eliminar tu propio usuario.');
+    if (target.role === 'admin' && target.active && users.adminCount() <= 1) throw bad('Debe quedar al menos un administrador activo.');
+    const u = users.usage(id);
+    if (u.comments || u.deals) {
+      const parts = [];
+      if (u.deals) parts.push(`${u.deals} ${u.deals === 1 ? 'negociación asignada' : 'negociaciones asignadas'}`);
+      if (u.comments) parts.push(`${u.comments} ${u.comments === 1 ? 'comentario' : 'comentarios'}`);
+      throw bad(`${target.name} tiene ${parts.join(' y ')}. Desactívalo en lugar de eliminarlo, así se conserva el historial.`);
+    }
+    users.remove(id);
+    return { ok: true };
+  }],
 
   // ---------- Empresas ----------
   ['GET', '/api/companies', {}, ({ query }) => companies.list({
