@@ -7,6 +7,7 @@ CRM para que el equipo siga cada negociación, desde el primer contacto hasta el
 - **Comentarios y reuniones:** en la ficha de cada empresa se registran reuniones (con fecha y hora), llamadas, mensajes de WhatsApp, emails y notas. Los cambios de estado y de responsable quedan registrados solos.
 - **Equipo:** cada compañero tiene su usuario. Cada negociación tiene un responsable y cada comentario muestra quién lo escribió.
 - **Seguimientos:** fecha de próximo seguimiento por negociación. Las vencidas se marcan en rojo.
+- **Flujos de WhatsApp:** secuencias editables de mensajes, plazos entre pasos, personalización por empresa e historial de envíos confirmados por el vendedor.
 
 Viene con los 369 prospectos de la planilla de Outscraper listos para importar (`data/prospectos.json`).
 
@@ -39,6 +40,34 @@ Abre http://localhost:3000.
 La primera vez que arranca, si no hay usuarios, crea un administrador y muestra en la consola el email (`admin@crm.local`) y una contraseña generada. Entra con esos datos, ve a **Mi cuenta** para cambiar la contraseña y a **Equipo** para crear los usuarios de tus compañeros.
 
 Para trabajar en el código: `npm run dev` recompila la interfaz y reinicia el servidor cada vez que guardas.
+
+## Flujos de WhatsApp
+
+1. En **Flujos WhatsApp**, crea o edita una plantilla. Cada paso tiene título, mensaje y días de espera. El primer plazo se cuenta desde el inicio del flujo; los siguientes se cuentan desde que el vendedor confirma el envío anterior.
+2. Usa `{{empresa}}`, `{{contacto}}`, `{{rubro}}`, `{{ciudad}}` y `{{vendedor}}` para personalizar los mensajes. Si falta el nombre de contacto, se usa el de la empresa.
+3. Pulsa **Contactar** desde Empresas, una tarjeta del tablero o la ficha. Selecciona la negociación y el flujo. Solo se permite un flujo en curso por negociación abierta.
+4. Revisa y ajusta el mensaje. En la fecha prevista, **Abrir mensaje en WhatsApp** abre el chat con el texto preparado. Envía el mensaje en WhatsApp y luego pulsa **Ya lo envié · Registrar** en el CRM.
+5. El CRM guarda el texto confirmado y el vendedor en el historial, avanza al siguiente paso y programa el seguimiento. El primer envío confirmado mueve una negociación en Prospecto a Contactado.
+6. Consulta **Para hoy y vencidos** para continuar los seguimientos. Puedes filtrar por estado, empresa, flujo o por tus negociaciones.
+
+Puedes pausar, reanudar, reprogramar o detener un flujo. **Respondió · Finalizar flujo** termina la secuencia para que el vendedor continúe la conversación. **No contactar** detiene todos los flujos de la empresa y bloquea nuevos flujos por WhatsApp. Cerrar una negociación como ganada o perdida también detiene su flujo.
+
+La integración usa enlaces `wa.me` para celulares de Paraguay, como el contacto original del CRM. **El envío es manual:** el CRM no envía mensajes automáticamente, no recibe respuestas, ni verifica entrega o lectura. Abrir el chat no cuenta como envío. No requiere una cuenta de API de WhatsApp. Los plazos generan seguimientos dentro del CRM; no generan notificaciones externas.
+
+Se incluye una plantilla marcada como **Borrador**, con textos de ejemplo para explorar necesidades de web, presencia digital y sistemas de gestión. Revísala antes de usarla. Puedes crear otras plantillas para cada servicio o tipo de negocio.
+
+Las ejecuciones conservan una copia de los mensajes y plazos originales. Editar o archivar una plantilla afecta únicamente los nuevos seguimientos. Los flujos terminados y los mensajes registrados conservan su historial. Si el equipo cambia manualmente la fecha de seguimiento de una negociación, detener o avanzar su flujo conserva esa fecha; la fecha propia del flujo se administra desde Contactar.
+
+Las tablas nuevas se crean automáticamente al arrancar, conservando los datos existentes. Usa la copia de seguridad habitual antes de actualizar una instalación.
+
+### Verificación
+
+```bash
+npm test
+npm run build
+```
+
+Las pruebas usan una base temporal aislada y cubren validaciones, personalización, copias de plantillas, registros duplicados, fechas, pausas, respuestas, bloqueos y cierre de negociaciones.
 
 ## Configuración
 
@@ -162,6 +191,13 @@ Todas las rutas (salvo el login) piden el encabezado `Authorization: Bearer <tok
 | POST | `/api/companies/:id/comments` | Agregar comentario o reunión |
 | PATCH/DELETE | `/api/comments/:id` | Editar o borrar un comentario |
 | GET | `/api/stats` | Números del tablero |
+| GET/POST | `/api/whatsapp/flows` | Listar y crear plantillas de flujos |
+| PATCH | `/api/whatsapp/flows/:id` | Guardar nombre, descripción, pasos y disponibilidad de una plantilla |
+| GET | `/api/whatsapp/runs` | Listar ejecuciones y próximos seguimientos |
+| POST | `/api/deals/:id/whatsapp` | Iniciar un flujo con `{ flow_id }` |
+| POST | `/api/whatsapp/runs/:id/action` | Registrar envío, pausar, reanudar, reprogramar, marcar respuesta, detener o bloquear contacto |
+
+Las acciones de ejecución requieren `version` (la versión recibida al consultar el flujo) para evitar cambios duplicados desde varias pestañas. `action` admite `sent`, `pause`, `resume`, `reschedule`, `responded`, `stop` y `do_not_contact`. `sent` requiere `message` con el texto realmente enviado; `resume` y `reschedule` requieren `next_due` en formato `YYYY-MM-DD`. La ficha de empresa incluye `whatsapp_runs` y `whatsapp_blocked`. Todos los miembros autenticados pueden gestionar flujos, con el mismo acceso de colaboración que las negociaciones.
 
 ## Si más adelante necesitan PostgreSQL
 

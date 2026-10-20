@@ -31,6 +31,28 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
+
+/* Flujos y seguimiento por WhatsApp */
+.wa-contact, .wa-fieldset { display: grid; gap: 16px; min-width: 0; }
+.wa-fieldset { border: 0; padding: 0; margin: 0; }
+.wa-flow-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.wa-flow-card, .wa-step-editor { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 14px; }
+.wa-run-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.wa-run-head h3, .wa-flow-card p { overflow-wrap: anywhere; }
+.wa-actions { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.wa-actions .field { flex: 1 1 170px; }
+.wa-actions .btn { white-space: normal; }
+.wa-preview { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--accent-soft); border-radius: var(--radius); padding: 16px; }
+.wa-steps { display: grid; gap: 8px; margin: 0; padding-left: 24px; }
+.wa-steps li { padding: 8px; border-radius: 6px; }
+.wa-steps li span { display: block; }
+.wa-current { background: var(--accent-soft); }
+.wa-done { color: var(--ok); }
+.wa-summary { margin-bottom: 16px; }
+.wa-summary p + p { margin-top: 8px; }
+.wa-intro { margin-bottom: 14px; }
+.wa-filters { align-items: center; }
+.card-foot { flex-wrap: wrap; }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f141c;

@@ -8,6 +8,7 @@
     "node": ">=22.9"
   },
   "scripts": {
+    "test": "node --test tests/*.test.js",
     "build": "node client/build.js",
     "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/index.js",
     "dev": "node server/scripts/dev.js",

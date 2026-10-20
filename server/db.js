@@ -89,6 +89,33 @@ CREATE TABLE IF NOT EXISTS comments (
 CREATE INDEX IF NOT EXISTS idx_deals_company ON deals(company_id);
 CREATE INDEX IF NOT EXISTS idx_deals_stage ON deals(stage);
 CREATE INDEX IF NOT EXISTS idx_comments_company ON comments(company_id, created_at);
+
+CREATE TABLE IF NOT EXISTS whatsapp_flows (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  steps TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS whatsapp_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  flow_id INTEGER REFERENCES whatsapp_flows(id) ON DELETE SET NULL,
+  flow_name TEXT NOT NULL,
+  steps TEXT NOT NULL,
+  step_index INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  next_due TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_open_deal ON whatsapp_runs(deal_id) WHERE status IN ('active', 'paused');
+CREATE INDEX IF NOT EXISTS idx_whatsapp_due ON whatsapp_runs(status, next_due);
+CREATE TABLE IF NOT EXISTS whatsapp_blocks (
+  company_id INTEGER PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE
+);
 `);
 
 // Ayuda para transacciones
@@ -261,6 +288,54 @@ export const comments = {
   },
   remove: (id) => db.prepare('DELETE FROM comments WHERE id = ?').run(id).changes,
 };
+
+// Las ejecuciones guardan una copia del flujo: editar una plantilla no cambia
+// mensajes ni plazos de prospectos que ya están en seguimiento.
+const flowRow = (row) => row && ({ ...row, steps: JSON.parse(row.steps) });
+const RUN_SELECT = `SELECT r.*, d.company_id, d.stage, d.owner_id, c.name AS company_name,
+  c.telefono, u.name AS owner_name FROM whatsapp_runs r
+  JOIN deals d ON d.id = r.deal_id JOIN companies c ON c.id = d.company_id
+  LEFT JOIN users u ON u.id = d.owner_id`;
+export const whatsapp = {
+  flows: () => db.prepare('SELECT * FROM whatsapp_flows ORDER BY active DESC, id').all().map(flowRow),
+  flow: (id) => flowRow(db.prepare('SELECT * FROM whatsapp_flows WHERE id = ?').get(id)),
+  saveFlow: (id, { name, description, steps, active }) => {
+    if (id) db.prepare("UPDATE whatsapp_flows SET name = ?, description = ?, steps = ?, active = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(name, description, JSON.stringify(steps), active, id);
+    else id = Number(db.prepare('INSERT INTO whatsapp_flows (name, description, steps, active) VALUES (?, ?, ?, ?)')
+      .run(name, description, JSON.stringify(steps), active).lastInsertRowid);
+    return whatsapp.flow(id);
+  },
+  blocked: (id) => !!db.prepare('SELECT 1 FROM whatsapp_blocks WHERE company_id = ?').get(id),
+  block: (id) => db.prepare('INSERT OR IGNORE INTO whatsapp_blocks (company_id) VALUES (?)').run(id),
+  runs: (companyId) => db.prepare(`${RUN_SELECT} ${companyId ? 'WHERE d.company_id = ?' : ''}
+    ORDER BY CASE r.status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END, r.next_due, r.id DESC`)
+    .all(...(companyId ? [companyId] : [])).map(flowRow),
+  run: (id) => flowRow(db.prepare(`${RUN_SELECT} WHERE r.id = ?`).get(id)),
+  openRun: (dealId) => flowRow(db.prepare("SELECT * FROM whatsapp_runs WHERE deal_id = ? AND status IN ('active','paused')").get(dealId)),
+  start: (dealId, flow, nextDue) => {
+    const r = db.prepare('INSERT INTO whatsapp_runs (deal_id, flow_id, flow_name, steps, next_due) VALUES (?, ?, ?, ?, ?)')
+      .run(dealId, flow.id, flow.name, JSON.stringify(flow.steps), nextDue);
+    return whatsapp.run(r.lastInsertRowid);
+  },
+  update: (id, { status, step_index, next_due }) => {
+    db.prepare("UPDATE whatsapp_runs SET status = ?, step_index = ?, next_due = ?, version = version + 1, updated_at = datetime('now') WHERE id = ?")
+      .run(status, step_index, next_due, id);
+    return whatsapp.run(id);
+  },
+};
+
+if (!whatsapp.flows().length) whatsapp.saveFlow(null, {
+  name: 'Explorar necesidades digitales · Borrador',
+  description: 'Textos de ejemplo para revisar con el equipo antes de contactar. Ajusta los mensajes y los plazos a tu embudo.',
+  active: 1,
+  steps: [
+    { title: 'Presentación', delay_days: 0, message: 'Hola, {{contacto}}. Soy {{vendedor}}, de Kolvex. Ayudamos a negocios como {{empresa}} con páginas web, presencia digital y sistemas de gestión. ¿Te parece que conversemos para ver si hay algo en lo que podamos ayudarles?' },
+    { title: 'Detectar la necesidad', delay_days: 3, message: 'Hola, {{contacto}}. Retomo mi mensaje anterior. En {{empresa}}, ¿les serviría mejorar cómo los encuentran en internet, recibir consultas o simplificar la gestión del negocio? Si te interesa, podemos ver juntos qué necesitan.' },
+    { title: 'Invitar a conversar', delay_days: 4, message: 'Hola, {{contacto}}. Si están evaluando alguna mejora digital para {{empresa}}, podemos coordinar una charla breve para entender la necesidad y proponerles opciones. ¿Les vendría bien?' },
+    { title: 'Cerrar el seguimiento', delay_days: 7, message: 'Hola, {{contacto}}. Cierro por aquí el seguimiento para no insistir. Si más adelante necesitan una web o un sistema para {{empresa}}, quedo a disposición. ¡Gracias por tu tiempo!' },
+  ],
+});
 
 // ---------- Resumen ----------
 export function stats() {

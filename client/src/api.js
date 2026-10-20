@@ -61,13 +61,7 @@ export const todayIso = () => {
 };
 export const isOverdue = (dateStr, stage) => !!dateStr && dateStr <= todayIso() && stage !== 'ganado' && stage !== 'perdido';
 
-// Link de WhatsApp solo para celulares de Paraguay (+595 9xx)
-export function whatsappUrl(phone) {
-  const digits = String(phone || '').replace(/\D/g, '');
-  if (/^5959\d{8}$/.test(digits)) return `https://wa.me/${digits}`;
-  if (/^09\d{8}$/.test(digits)) return `https://wa.me/595${digits.slice(1)}`;
-  return null;
-}
+export { whatsappUrl } from '../../shared/whatsapp.js';
 
 // Link para llamar (tel:) con el número en formato internacional
 export function telUrl(phone) {

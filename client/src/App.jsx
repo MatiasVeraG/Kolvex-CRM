@@ -8,6 +8,7 @@ import CompanyDetail from './pages/CompanyDetail.jsx';
 import Team from './pages/Team.jsx';
 import Account from './pages/Account.jsx';
 import Logo from './components/Logo.jsx';
+import WhatsAppFlows from './pages/WhatsAppFlows.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -51,17 +52,19 @@ export default function App() {
   if (!user) return <Login onLogin={onLogin} />;
   if (!ctx) return <div className="center-page"><Spinner /></div>;
 
-  const [, section, id] = route.split('/');
+  const [, section, id, action, contactDealId] = route.split('/');
   let page;
-  if (section === 'empresas' && id) page = <CompanyDetail id={Number(id)} key={id} />;
+  if (section === 'empresas' && id) page = <CompanyDetail id={Number(id)} key={id} autoContact={action === 'contactar'} contactDealId={Number(contactDealId) || null} />;
   else if (section === 'empresas') page = <Companies />;
   else if (section === 'equipo') page = <Team />;
   else if (section === 'cuenta') page = <Account />;
+  else if (section === 'flujos') page = <WhatsAppFlows />;
   else page = <Board />;
 
   const nav = [
     ['tablero', 'Negociaciones'],
     ['empresas', 'Empresas'],
+    ['flujos', 'Flujos WhatsApp'],
     ['equipo', 'Equipo'],
   ];
   const current = section || 'tablero';

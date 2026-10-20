@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react';
 import { api, money, number, fmtDateTime, fmtDate, parseUtc, parseLocal, relative, whatsappUrl, telUrl, webUrl, webLabel, mapsSearchUrl, directionsUrl, googleSearchUrl, instagramSearchUrl, isOverdue, COMMENT_LABELS } from '../api.js';
 import { useApp, useFetch, useToast, navigate, Spinner, EmptyState, ConfirmButton, PriorityBadge, StageBadge } from '../components/ui.jsx';
 import CompanyFields from '../components/CompanyFields.jsx';
+import WhatsAppContact from '../components/WhatsAppContact.jsx';
+import { RUN_LABELS } from '../../../shared/whatsapp.js';
 
-export default function CompanyDetail({ id }) {
+export default function CompanyDetail({ id, autoContact = false, contactDealId }) {
   const { user } = useApp();
   const toast = useToast();
   const res = useFetch(() => api(`/companies/${id}`), [id]);
   const [editing, setEditing] = useState(false);
+  const [contacting, setContacting] = useState(autoContact);
+  useEffect(() => { if (autoContact) setContacting(true); }, [autoContact]);
 
   if (res.loading && !res.data) return <div className="page"><Spinner /></div>;
   if (res.error && !res.data) return <div className="page"><a href="#/empresas" className="back">← Empresas</a><div className="alert">{res.error}</div></div>;
@@ -36,7 +40,11 @@ export default function CompanyDetail({ id }) {
           <p className="muted">{[c.rubro, c.ciudad, c.presencia && `Presencia: ${c.presencia}`].filter(Boolean).join(' · ')}</p>
         </div>
       </div>
-      <ContactBar c={c} onEdit={() => setEditing(true)} />
+      <ContactBar c={c} onEdit={() => setEditing(true)} onContact={() => setContacting(true)} />
+      <section className="panel wa-summary">
+        <header className="panel-head"><h2>Seguimiento por WhatsApp</h2><button className="btn btn-primary btn-sm" onClick={() => setContacting(true)}>Contactar</button></header>
+        {c.whatsapp_blocked ? <p className="text-alert">Empresa marcada como no contactar por WhatsApp.</p> : c.whatsapp_runs.length ? c.whatsapp_runs.map((r) => <p key={r.id}><strong>{r.flow_name}</strong> · {RUN_LABELS[r.status]} · {r.step_index}/{r.steps.length} mensajes registrados{r.next_due && ` · Próximo: ${fmtDate(parseLocal(r.next_due))}`}</p>) : <p className="muted">Sin flujos iniciados. Pulsa «Contactar» para elegir una secuencia de mensajes.</p>}
+      </section>
 
       <div className="detail-grid">
         <div className="detail-main">
@@ -69,6 +77,7 @@ export default function CompanyDetail({ id }) {
           )}
         </aside>
       </div>
+      {contacting && <WhatsAppContact key={contactDealId} initialDealId={contactDealId} company={c} onClose={() => { setContacting(false); if (autoContact) navigate(`/empresas/${id}`); }} onChange={() => res.reload(true)} />}
     </div>
   );
 }
@@ -86,7 +95,7 @@ const ICONS = {
 };
 const Icon = ({ name }) => <svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[name]} fill="currentColor" /></svg>;
 
-function ContactBar({ c, onEdit }) {
+function ContactBar({ c, onEdit, onContact }) {
   const toast = useToast();
   const wa = whatsappUrl(c.telefono);
   const tel = telUrl(c.telefono);
@@ -108,7 +117,7 @@ function ContactBar({ c, onEdit }) {
         )}
       </div>
       <div className="contact-actions">
-        {wa && <a className="btn btn-wa btn-sm" href={wa} {...ext}><Icon name="whatsapp" />WhatsApp</a>}
+        <button className="btn btn-wa btn-sm" onClick={onContact}><Icon name="whatsapp" />Contactar</button>
         {tel && <a className="btn btn-ghost btn-sm" href={tel}><Icon name="phone" />Llamar</a>}
         {c.email && <a className="btn btn-ghost btn-sm" href={`mailto:${c.email}`}><Icon name="mail" />Email</a>}
         <a className="btn btn-ghost btn-sm" href={mapsSearchUrl(c)} {...ext}><Icon name="pin" />Google Maps</a>

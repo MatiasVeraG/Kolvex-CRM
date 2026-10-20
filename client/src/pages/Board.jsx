@@ -146,6 +146,7 @@ function DealCard({ deal: d, dragging, onDragStart, onDragEnd, onMove }) {
         </div>
       </a>
       <footer className="card-foot">
+        <a className="btn btn-wa btn-sm" href={`#/empresas/${d.company_id}/contactar/${d.id}`}>Contactar</a>
         <span className="owner">{d.owner_name || <em>Sin responsable</em>}</span>
         <select className="mini-select" value={d.stage} onChange={(e) => onMove(e.target.value)} aria-label={`Mover ${d.company_name}`}>
           {meta.stages.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}

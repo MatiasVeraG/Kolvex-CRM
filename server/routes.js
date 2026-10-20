@@ -1,6 +1,7 @@
 // Rutas de la API. Cada handler recibe { req, user, params, query, body }
 // y devuelve el objeto que se enviará como JSON.
-import { STAGES, STAGE_IDS, COMMENT_TYPES, PRIORITIES, COMPANY_FIELDS, users, companies, deals, comments, stats, tx } from './db.js';
+import { STAGES, STAGE_IDS, COMMENT_TYPES, PRIORITIES, COMPANY_FIELDS, users, companies, deals, comments, stats, tx, whatsapp } from './db.js';
+import { whatsappUrl, FLOW_VARIABLES } from '../shared/whatsapp.js';
 import { createToken, verifyPassword, hashPassword, validatePassword } from './auth.js';
 import { importRecords } from './importer.js';
 
@@ -79,6 +80,53 @@ function dealInput(body, partial) {
 }
 
 const stageLabel = (id) => STAGES.find((s) => s.id === id)?.label || id;
+
+function flowInput(body) {
+  const name = str(body.name, 120);
+  if (!name) throw bad('El nombre del flujo es obligatorio.');
+  if (!Array.isArray(body.steps) || !body.steps.length || body.steps.length > 20) throw bad('Agrega entre 1 y 20 pasos.');
+  const steps = body.steps.map((s) => {
+    if (!s || typeof s !== 'object') throw bad('Paso inválido.');
+    const title = str(s.title, 120);
+    const message = str(s.message, 4000);
+    const delay_days = Number(s.delay_days);
+    if (!title || !message) throw bad('Cada paso necesita título y mensaje.');
+    if (!Number.isInteger(delay_days) || delay_days < 0 || delay_days > 365) throw bad('El plazo debe ser de 0 a 365 días.');
+    const remaining = message.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => FLOW_VARIABLES.includes(key) ? '' : match);
+    if (remaining.includes('{{') || remaining.includes('}}')) throw bad(`Variables disponibles: ${FLOW_VARIABLES.join(', ')}.`);
+    return { title, message, delay_days };
+  });
+  return { name, description: str(body.description, 1000) || '', steps, active: body.active === false || body.active === 0 ? 0 : 1 };
+}
+
+function dueIn(days) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: process.env.TZ || 'America/Asuncion', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  const d = new Date(`${p.year}-${p.month}-${p.day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function followupDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+      !Number.isFinite(Date.parse(`${value}T12:00:00Z`)) || new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) !== value) {
+    throw bad('Elige una fecha válida para el seguimiento.');
+  }
+  return value;
+}
+
+function changeRun(run, fields) {
+  const after = whatsapp.update(run.id, { ...run, ...fields });
+  const deal = deals.get(run.deal_id);
+  // Conserva fechas que el equipo haya cambiado manualmente en la negociación.
+  if (deal.next_followup === run.next_due) deals.update(deal.id, { next_followup: after.next_due });
+  return after;
+}
+
+function stopDealFlow(dealId) {
+  const run = whatsapp.openRun(dealId);
+  if (run) changeRun(run, { status: 'stopped', next_due: null });
+}
 
 // Registra en el historial de la empresa los cambios importantes de una negociación.
 function logDealChanges(before, after, user) {
@@ -189,7 +237,7 @@ export const routes = [
     const id = idParam(params.id);
     const c = companies.get(id);
     if (!c) throw notFound('Empresa');
-    return { ...c, deals: deals.byCompany(id), comments: comments.byCompany(id) };
+    return { ...c, deals: deals.byCompany(id), comments: comments.byCompany(id), whatsapp_runs: whatsapp.runs(id), whatsapp_blocked: whatsapp.blocked(id) };
   }],
   ['PATCH', '/api/companies/:id', {}, ({ params, body }) => {
     const id = idParam(params.id);
@@ -217,7 +265,8 @@ export const routes = [
     if (!before) throw notFound('Negociación');
     const after = deals.update(id, dealInput(body, true));
     logDealChanges(before, after, user);
-    return after;
+    if (after.stage === 'ganado' || after.stage === 'perdido') stopDealFlow(id);
+    return deals.get(id);
   })],
   ['DELETE', '/api/deals/:id', {}, ({ user, params }) => {
     requireAdmin(user);
@@ -256,6 +305,80 @@ export const routes = [
     comments.remove(id);
     return { ok: true };
   }],
+
+  // ---------- Flujos de WhatsApp (envío manual, confirmado por el vendedor) ----------
+  ['GET', '/api/whatsapp/flows', {}, () => whatsapp.flows()],
+  ['POST', '/api/whatsapp/flows', {}, ({ body }) => whatsapp.saveFlow(null, flowInput(body))],
+  ['PATCH', '/api/whatsapp/flows/:id', {}, ({ params, body }) => {
+    const id = idParam(params.id);
+    if (!whatsapp.flow(id)) throw notFound('Flujo');
+    return whatsapp.saveFlow(id, flowInput(body));
+  }],
+  ['GET', '/api/whatsapp/runs', {}, () => whatsapp.runs()],
+  ['POST', '/api/deals/:id/whatsapp', {}, ({ params, body, user }) => tx(() => {
+    const deal = deals.get(idParam(params.id));
+    if (!deal) throw notFound('Negociación');
+    const company = companies.get(deal.company_id);
+    if (whatsapp.blocked(company.id)) throw bad('Esta empresa está marcada como no contactar.');
+    if (!whatsappUrl(company.telefono)) throw bad('Agrega un celular de Paraguay válido para WhatsApp.');
+    if (['ganado', 'perdido'].includes(deal.stage)) throw bad('La negociación está cerrada.');
+    if (whatsapp.openRun(deal.id)) throw bad('Esta negociación ya tiene un flujo en curso.');
+    const flow = whatsapp.flow(idParam(body.flow_id));
+    if (!flow || !flow.active) throw bad('Selecciona un flujo activo.');
+    const run = whatsapp.start(deal.id, flow, dueIn(flow.steps[0].delay_days));
+    deals.update(deal.id, { next_followup: run.next_due });
+    comments.create({ company_id: company.id, deal_id: deal.id, user_id: user.id, system: 1,
+      body: `${user.name} inició el flujo de WhatsApp "${flow.name}".` });
+    return run;
+  })],
+  ['POST', '/api/whatsapp/runs/:id/action', {}, ({ params, body, user }) => tx(() => {
+    const run = whatsapp.run(idParam(params.id));
+    if (!run) throw notFound('Seguimiento');
+    if (body.version !== run.version) throw new HttpError(409, 'El seguimiento cambió. Actualiza la ficha antes de continuar.');
+    if (!['active', 'paused'].includes(run.status)) throw bad('Este flujo ya terminó.');
+    const company = companies.get(run.company_id);
+    const deal = deals.get(run.deal_id);
+    if (['ganado', 'perdido'].includes(deal.stage) && !['stop', 'do_not_contact'].includes(body.action)) throw bad('La negociación está cerrada.');
+    let fields;
+    let log;
+    if (body.action === 'sent') {
+      if (run.status !== 'active' || whatsapp.blocked(company.id)) throw bad('El flujo no está activo.');
+      if (!whatsappUrl(company.telefono)) throw bad('Agrega un celular válido antes de registrar el mensaje.');
+      const message = str(body.message, 4000);
+      if (!message || message.includes('{{') || message.includes('}}')) throw bad('Completa el mensaje antes de registrarlo.');
+      if (run.next_due > dueIn(0)) throw bad('Este paso todavía no vence. Reprograma su fecha para enviarlo hoy.');
+      const index = run.step_index + 1;
+      fields = { step_index: index, status: index === run.steps.length ? 'completed' : 'active',
+        next_due: index === run.steps.length ? null : dueIn(run.steps[index].delay_days) };
+      comments.create({ company_id: company.id, deal_id: deal.id, user_id: user.id, type: 'whatsapp',
+        body: `Envío confirmado por ${user.name} · ${run.flow_name} · Paso ${index}: ${run.steps[run.step_index].title}\n\n${message}` });
+      if (deal.stage === 'prospecto') {
+        const after = deals.update(deal.id, { stage: 'contactado' });
+        logDealChanges(deal, after, user);
+      }
+    } else if (body.action === 'pause' && run.status === 'active') {
+      fields = { status: 'paused', next_due: null }; log = 'pausó el flujo';
+    } else if (body.action === 'resume' && run.status === 'paused') {
+      if (whatsapp.blocked(company.id)) throw bad('Esta empresa está marcada como no contactar.');
+      fields = { status: 'active', next_due: followupDate(body.next_due) }; log = 'reanudó el flujo';
+    } else if (body.action === 'reschedule' && run.status === 'active') {
+      fields = { next_due: followupDate(body.next_due) }; log = 'reprogramó el seguimiento';
+    } else if (['responded', 'stop', 'do_not_contact'].includes(body.action)) {
+      fields = { status: body.action === 'responded' ? 'responded' : 'stopped', next_due: null };
+      log = body.action === 'responded' ? 'registró que el prospecto respondió' : 'detuvo el flujo';
+      if (body.action === 'do_not_contact') {
+        whatsapp.block(company.id);
+        for (const other of whatsapp.runs(company.id)) {
+          if (other.id !== run.id && ['active', 'paused'].includes(other.status)) changeRun(other, { status: 'stopped', next_due: null });
+        }
+        log = 'marcó la empresa como no contactar por WhatsApp y detuvo sus flujos';
+      }
+    } else throw bad('Acción inválida para el estado actual.');
+    const after = changeRun(run, fields);
+    if (log) comments.create({ company_id: company.id, deal_id: deal.id, user_id: user.id, system: 1,
+      body: `${user.name} ${log} (${run.flow_name}).` });
+    return after;
+  })],
 
   // ---------- Importar ----------
   ['POST', '/api/import', {}, ({ body }) => {
