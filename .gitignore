@@ -5,3 +5,7 @@ data/*.db-*
 data/backups/
 data/.session-secret
 .env
+automation/.env
+automation/.session/
+.wwebjs_auth/
+.wwebjs_cache/

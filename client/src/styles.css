@@ -52,6 +52,8 @@
 .wa-summary p + p { margin-top: 8px; }
 .wa-intro { margin-bottom: 14px; }
 .wa-filters { align-items: center; }
+.wa-automation { display: grid; gap: 16px; }
+.wa-message { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }
 .card-foot { flex-wrap: wrap; }
 @media (prefers-color-scheme: dark) {
   :root {

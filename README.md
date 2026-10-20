@@ -52,13 +52,40 @@ Para trabajar en el código: `npm run dev` recompila la interfaz y reinicia el s
 
 Puedes pausar, reanudar, reprogramar o detener un flujo. **Respondió · Finalizar flujo** termina la secuencia para que el vendedor continúe la conversación. **No contactar** detiene todos los flujos de la empresa y bloquea nuevos flujos por WhatsApp. Cerrar una negociación como ganada o perdida también detiene su flujo.
 
-La integración usa enlaces `wa.me` para celulares de Paraguay, como el contacto original del CRM. **El envío es manual:** el CRM no envía mensajes automáticamente, no recibe respuestas, ni verifica entrega o lectura. Abrir el chat no cuenta como envío. No requiere una cuenta de API de WhatsApp. Los plazos generan seguimientos dentro del CRM; no generan notificaciones externas.
+El modo semimanual usa enlaces `wa.me` para celulares de Paraguay, como el contacto original del CRM. Abrir el chat no cuenta como envío: se confirma con **Ya lo envié · Registrar**. También se puede activar el modo automático descrito abajo. Ninguno requiere una cuenta de API de WhatsApp. Los plazos generan seguimientos dentro del CRM; no generan notificaciones externas.
 
 Se incluye una plantilla marcada como **Borrador**, con textos de ejemplo para explorar necesidades de web, presencia digital y sistemas de gestión. Revísala antes de usarla. Puedes crear otras plantillas para cada servicio o tipo de negocio.
 
 Las ejecuciones conservan una copia de los mensajes y plazos originales. Editar o archivar una plantilla afecta únicamente los nuevos seguimientos. Los flujos terminados y los mensajes registrados conservan su historial. Si el equipo cambia manualmente la fecha de seguimiento de una negociación, detener o avanzar su flujo conserva esa fecha; la fecha propia del flujo se administra desde Contactar.
 
 Las tablas nuevas se crean automáticamente al arrancar, conservando los datos existentes. Usa la copia de seguridad habitual antes de actualizar una instalación.
+
+## Automatización de WhatsApp Web
+
+En **Flujos WhatsApp → Envíos automáticos por rubro**, un administrador puede asignar una plantilla a cada rubro y una regla general para los demás. **Simular lote y revisar mensajes** muestra qué empresas entrarán, los textos y las exclusiones, sin enviar ni crear seguimientos. **Preparar seguimientos** incorpora ese lote; no activa los envíos por sí solo. Un lote se debe volver a simular si los destinatarios o textos cambian antes de prepararlo.
+
+Solo se incluyen negociaciones en Prospecto, con celular válido y sin flujos previos. Cada número se incorpora una sola vez al modo automático, aunque esté repetido en varias empresas. Los seguimientos conservan una copia del flujo y el nombre del vendedor que preparó el lote. Las reglas se aplican al preparar lotes nuevos, no modifican los ya preparados.
+
+El worker es un proceso aparte: usa `whatsapp-web.js` y Puppeteer para controlar WhatsApp Web. Puede ejecutarse en tu computadora mientras el CRM está alojado en un servidor. El servidor del CRM mantiene su instalación actual y no necesita instalar Chromium. El worker sí necesita **Node.js 22.12 o superior**, dependencias de Chromium y una carpeta persistente para la sesión.
+
+```powershell
+cd automation
+npm ci
+Copy-Item .env.example .env
+# Edita .env: CRM_URL, CRM_EMAIL y CRM_PASSWORD de un administrador existente.
+npm run simulate  # previsualiza por API; no abre WhatsApp ni envía mensajes
+npm start         # muestra el QR para vincular WhatsApp
+```
+
+Desde WhatsApp en el teléfono, abre **Dispositivos vinculados** y escanea el QR de la terminal. Luego, en el CRM, revisa el lote y pulsa **Habilitar envíos reales**. Por defecto los envíos están pausados, el horario es de 9 a 18 (TZ del servidor, America/Asuncion por defecto), con un máximo de 30 intentos diarios y 60 segundos entre mensajes. El worker debe permanecer encendido. El panel muestra si está conectado y vinculado. Para detener nuevos envíos usa **Pausar envíos automáticos**; un envío ya iniciado puede finalizar.
+
+La URL remota debe usar HTTPS; se permite HTTP en localhost para desarrollo. `automation/.env` contiene las credenciales del CRM y `.session/` contiene la sesión de WhatsApp y los recibos pendientes: ambos están excluidos de Git. No compartas esa carpeta ni ejecutes dos workers con el mismo perfil. Si el proceso se cierra abruptamente, comprueba que no siga ejecutándose antes de quitar el archivo `.session/worker.lock` y reiniciarlo. Puedes indicar `WA_CHROME_PATH` para usar un Chrome/Chromium instalado y `WA_SESSION_DIR` para elegir otro directorio persistente.
+
+Antes de cada envío el worker verifica el estado actual del flujo y revisa hasta los últimos 100 mensajes del chat. Cuando detecta una respuesta posterior al inicio del seguimiento, guarda el texto y finaliza la secuencia. Si detecta una baja explícita (`baja`, `stop`, `no me escribas`, `no contactar` o `no me contacten`), bloquea ese número para nuevos lotes. Si no puede revisar el chat, detiene el trabajo para revisión. La selección de ramas por respuesta se implementará al definir el embudo; por ahora una respuesta termina la secuencia automática.
+
+Cuando WhatsApp Web acepta el mensaje, se guarda su identificador, se registra el texto en el historial y se programa el siguiente paso. **Aceptado no significa entregado ni leído.** Los recibos se guardan localmente antes de confirmarse al CRM: una reconexión reenvía el recibo, no el mensaje. Si el resultado es incierto o pasan cinco minutos sin confirmación, el envío queda en **Revisar resultado**, sin reintento automático. Revisa el chat y confirma el resultado en el panel. Si confirmas que no se envió, el flujo queda pausado; ese paso se puede completar desde el modo semimanual.
+
+Esta integración con WhatsApp Web no es oficial. Puede necesitar ajustes ante cambios de WhatsApp y existe riesgo de restricción de la cuenta. Se fija Puppeteer actualizado mediante `overrides` en el paquete del worker para evitar dependencias vulnerables del navegador que trae la biblioteca. La prueba del proyecto usa un adaptador simulado y no verifica envíos en una cuenta real: la vinculación y la primera prueba con un contacto autorizado se realizan en tu instalación.
 
 ### Verificación
 
@@ -67,7 +94,7 @@ npm test
 npm run build
 ```
 
-Las pruebas usan una base temporal aislada y cubren validaciones, personalización, copias de plantillas, registros duplicados, fechas, pausas, respuestas, bloqueos y cierre de negociaciones.
+Las pruebas usan bases temporales aisladas y cubren validaciones, personalización, copias de plantillas, registros duplicados, fechas, pausas, respuestas, bloqueos y cierre de negociaciones. También prueban la API HTTP con el worker en simulación, límites, selección por rubro, envíos simulados, persistencia de recibos, desconexiones y resultados inciertos.
 
 ## Configuración
 
@@ -198,6 +225,8 @@ Todas las rutas (salvo el login) piden el encabezado `Authorization: Bearer <tok
 | POST | `/api/whatsapp/runs/:id/action` | Registrar envío, pausar, reanudar, reprogramar, marcar respuesta, detener o bloquear contacto |
 
 Las acciones de ejecución requieren `version` (la versión recibida al consultar el flujo) para evitar cambios duplicados desde varias pestañas. `action` admite `sent`, `pause`, `resume`, `reschedule`, `responded`, `stop` y `do_not_contact`. `sent` requiere `message` con el texto realmente enviado; `resume` y `reschedule` requieren `next_due` en formato `YYYY-MM-DD`. La ficha de empresa incluye `whatsapp_runs` y `whatsapp_blocked`. Todos los miembros autenticados pueden gestionar flujos, con el mismo acceso de colaboración que las negociaciones.
+
+La automatización requiere rol administrador. `GET/PATCH /api/whatsapp/automation` consulta el estado o guarda límites y activación; `POST .../rules` y `POST .../rules/remove` gestionan reglas; `POST .../preview` simula y devuelve una huella que se envía a `POST .../enroll` para preparar el lote. El worker usa `POST .../claim`, `POST .../jobs/:id/check`, `POST .../jobs/:id/result`, `POST .../reply`, `GET .../targets` y `POST .../heartbeat`. Un claim reserva un único mensaje con `claim_token`; una confirmación repetida no duplica el historial. `POST .../jobs/:id/resolve` permite revisar resultados inciertos desde el panel. Los tokens de claim no se devuelven en el listado del panel.
 
 ## Si más adelante necesitan PostgreSQL
 

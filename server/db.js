@@ -116,6 +116,36 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_due ON whatsapp_runs(status, next_due);
 CREATE TABLE IF NOT EXISTS whatsapp_blocks (
   company_id INTEGER PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS whatsapp_automation_settings (id INTEGER PRIMARY KEY CHECK (id = 1), config TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS whatsapp_automation_rules (
+  rubro TEXT PRIMARY KEY COLLATE NOCASE,
+  flow_id INTEGER NOT NULL REFERENCES whatsapp_flows(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS whatsapp_enrollments (
+  run_id INTEGER PRIMARY KEY REFERENCES whatsapp_runs(id) ON DELETE CASCADE,
+  phone TEXT NOT NULL UNIQUE,
+  sender_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  sender_name TEXT NOT NULL,
+  started_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS whatsapp_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL REFERENCES whatsapp_runs(id) ON DELETE CASCADE,
+  step_index INTEGER NOT NULL,
+  run_version INTEGER NOT NULL,
+  phone TEXT NOT NULL,
+  message TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending',
+  claim_token TEXT,
+  started_at INTEGER,
+  local_day TEXT,
+  finished_at INTEGER,
+  provider_id TEXT,
+  detail TEXT,
+  UNIQUE(run_id, step_index)
+);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_jobs_state ON whatsapp_jobs(state, started_at);
+CREATE TABLE IF NOT EXISTS whatsapp_incoming_events (event_key TEXT PRIMARY KEY);
 `);
 
 // Ayuda para transacciones
@@ -323,6 +353,40 @@ export const whatsapp = {
       .run(status, step_index, next_due, id);
     return whatsapp.run(id);
   },
+};
+
+// Persistencia de automatización. Los envíos inciertos nunca se reintentan solos.
+export const automationStore = {
+  rememberReply: (key) => db.prepare('INSERT OR IGNORE INTO whatsapp_incoming_events (event_key) VALUES (?)').run(key).changes,
+  config: () => {
+    const row = db.prepare('SELECT config FROM whatsapp_automation_settings WHERE id = 1').get();
+    return row ? JSON.parse(row.config) : { enabled: false, daily_limit: 30, interval_seconds: 60, start_hour: 9, end_hour: 18 };
+  },
+  saveConfig: (config) => db.prepare('INSERT INTO whatsapp_automation_settings (id, config) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET config = excluded.config').run(JSON.stringify(config)),
+  rules: () => plainAll(db.prepare('SELECT r.*, f.name AS flow_name, f.active FROM whatsapp_automation_rules r JOIN whatsapp_flows f ON f.id = r.flow_id ORDER BY r.rubro').all()),
+  saveRule: (rubro, flowId) => db.prepare('INSERT INTO whatsapp_automation_rules (rubro, flow_id) VALUES (?, ?) ON CONFLICT(rubro) DO UPDATE SET flow_id = excluded.flow_id').run(rubro, flowId),
+  removeRule: (rubro) => db.prepare('DELETE FROM whatsapp_automation_rules WHERE rubro = ?').run(rubro),
+  enrolled: (phone) => !!db.prepare('SELECT 1 FROM whatsapp_enrollments WHERE phone = ?').get(phone),
+  enroll: (run, phone, user, now) => db.prepare('INSERT INTO whatsapp_enrollments (run_id, phone, sender_id, sender_name, started_at) VALUES (?, ?, ?, ?, ?)').run(run.id, phone, user.id, user.name, now),
+  enrollment: (id) => plain(db.prepare('SELECT * FROM whatsapp_enrollments WHERE run_id = ?').get(id)),
+  enrollments: () => plainAll(db.prepare('SELECT * FROM whatsapp_enrollments').all()),
+  jobs: () => plainAll(db.prepare('SELECT j.*, c.name AS company_name FROM whatsapp_jobs j JOIN whatsapp_runs r ON r.id = j.run_id JOIN deals d ON d.id = r.deal_id JOIN companies c ON c.id = d.company_id ORDER BY j.id DESC LIMIT 100').all()),
+  job: (id) => plain(db.prepare('SELECT * FROM whatsapp_jobs WHERE id = ?').get(id)),
+  stepJob: (runId, index) => plain(db.prepare('SELECT * FROM whatsapp_jobs WHERE run_id = ? AND step_index = ?').get(runId, index)),
+  busy: (runId) => !!db.prepare("SELECT 1 FROM whatsapp_jobs WHERE run_id = ? AND state IN ('processing','uncertain')").get(runId),
+  processing: () => !!db.prepare("SELECT 1 FROM whatsapp_jobs WHERE state = 'processing'").get(),
+  stale: (before) => db.prepare("UPDATE whatsapp_jobs SET state = 'uncertain', detail = 'El worker dejó de confirmar el resultado. Revisar en WhatsApp.' WHERE state = 'processing' AND started_at < ?").run(before),
+  attempts: (day) => db.prepare('SELECT COUNT(*) AS n FROM whatsapp_jobs WHERE local_day = ? AND started_at IS NOT NULL').get(day).n,
+  lastAttempt: () => db.prepare('SELECT MAX(started_at) AS t FROM whatsapp_jobs').get().t || 0,
+  pending: () => plainAll(db.prepare("SELECT * FROM whatsapp_jobs WHERE state = 'pending' ORDER BY id").all()),
+  queue: (run, phone, message) => db.prepare('INSERT OR IGNORE INTO whatsapp_jobs (run_id, step_index, run_version, phone, message) VALUES (?, ?, ?, ?, ?)').run(run.id, run.step_index, run.version, phone, message).changes,
+  updateJob: (id, fields) => {
+    updateRow('whatsapp_jobs', id, fields, ['state', 'claim_token', 'started_at', 'local_day', 'finished_at', 'provider_id', 'detail'], false);
+    return automationStore.job(id);
+  },
+  cancelPending: (runId) => db.prepare("UPDATE whatsapp_jobs SET state = 'cancelled', detail = 'El seguimiento cambió antes del envío.' WHERE run_id = ? AND state = 'pending'").run(runId),
+  requeueCancelled: (run) => db.prepare("UPDATE whatsapp_jobs SET state = 'pending', run_version = ?, detail = NULL, claim_token = NULL WHERE run_id = ? AND step_index = ? AND state = 'cancelled' AND (started_at IS NULL OR detail = 'El worker confirmó que no invocó el envío.')").run(run.version, run.id, run.step_index),
+  countByState: () => plainAll(db.prepare('SELECT state, COUNT(*) AS total FROM whatsapp_jobs GROUP BY state').all()),
 };
 
 if (!whatsapp.flows().length) whatsapp.saveFlow(null, {

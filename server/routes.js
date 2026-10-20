@@ -1,6 +1,7 @@
 // Rutas de la API. Cada handler recibe { req, user, params, query, body }
 // y devuelve el objeto que se enviará como JSON.
-import { STAGES, STAGE_IDS, COMMENT_TYPES, PRIORITIES, COMPANY_FIELDS, users, companies, deals, comments, stats, tx, whatsapp } from './db.js';
+import { STAGES, STAGE_IDS, COMMENT_TYPES, PRIORITIES, COMPANY_FIELDS, users, companies, deals, comments, stats, tx, whatsapp, automationStore } from './db.js';
+import { automationRoutes } from './automation.js';
 import { whatsappUrl, FLOW_VARIABLES } from '../shared/whatsapp.js';
 import { createToken, verifyPassword, hashPassword, validatePassword } from './auth.js';
 import { importRecords } from './importer.js';
@@ -335,6 +336,7 @@ export const routes = [
     const run = whatsapp.run(idParam(params.id));
     if (!run) throw notFound('Seguimiento');
     if (body.version !== run.version) throw new HttpError(409, 'El seguimiento cambió. Actualiza la ficha antes de continuar.');
+    if (automationStore.busy(run.id) && ['sent', 'resume', 'reschedule'].includes(body.action)) throw new HttpError(409, 'Hay un envío automático en proceso o incierto. Revisa su resultado en Automatización.');
     if (!['active', 'paused'].includes(run.status)) throw bad('Este flujo ya terminó.');
     const company = companies.get(run.company_id);
     const deal = deals.get(run.deal_id);
@@ -375,10 +377,13 @@ export const routes = [
       }
     } else throw bad('Acción inválida para el estado actual.');
     const after = changeRun(run, fields);
+    automationStore.cancelPending(run.id);
     if (log) comments.create({ company_id: company.id, deal_id: deal.id, user_id: user.id, system: 1,
       body: `${user.name} ${log} (${run.flow_name}).` });
     return after;
   })],
+
+  ...automationRoutes(HttpError),
 
   // ---------- Importar ----------
   ['POST', '/api/import', {}, ({ body }) => {

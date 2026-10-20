@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, todayIso, fmtDate, parseLocal } from '../api.js';
 import { FLOW_VARIABLES, RUN_LABELS } from '../../../shared/whatsapp.js';
 import { useApp, useFetch, useToast, Spinner, Modal, EmptyState } from '../components/ui.jsx';
+import WhatsAppAutomation from '../components/WhatsAppAutomation.jsx';
 
 const newStep = () => ({ title: '', message: '', delay_days: 0 });
 export default function WhatsAppFlows() {
@@ -20,6 +21,7 @@ export default function WhatsAppFlows() {
     <div className="page-head"><div><h1>Flujos de WhatsApp</h1><p className="muted">Organiza tus mensajes y el seguimiento de cada prospecto.</p></div>
       <button className="btn btn-primary" onClick={() => setEditing({ name: '', description: '', active: 1, steps: [newStep()] })}>+ Crear flujo</button>
     </div>
+    <WhatsAppAutomation flows={flows.data || []} />
     <section className="panel">
       <header className="panel-head"><h2>Plantillas de mensajes</h2></header>
       <p className="muted wa-intro">Define los textos y cuántos días esperar entre mensajes. Para iniciar un flujo, abre una empresa y pulsa «Contactar».</p>
